@@ -18,7 +18,6 @@ engine: julia
 First, we activate the project and load the necessary packages.
 
 ```{julia}
-#| label: setup
 #| message: false
 #| output: false
 
@@ -34,48 +33,305 @@ using Interpolations, DataInterpolations, Distributions, Random,
 # Question 1
 ## (a)
 We want to guess the life expectancy at birth for someone born in 1996.
-To do so, observe that life expectancy increases monotonically with time according to the observed data.
+To do so, observe that life expectancy increases monotonically with time according to the observed data, so we should not consider a cubic spline. Since the problem is one dimensional, we choose the Pchip
 ```{julia}
-#| label: q1-data
+# define vectors 
+year = [1940, 1950, 1960, 1970, 1980, 1991, 2000, 2010],
+expectancy = [45.5, 48.0, 52.5, 57.6, 62.5, 66.9, 71.1, 74.4]
 
-# Storing the data using a Dictionary
-life_expectancy = Dict(
-    "year" => [1940, 1950, 1960, 1970, 1980, 1991, 2000, 2010],
-    "expectancy" => [45.5, 48.0, 52.5, 57.6, 62.5, 66.9, 71.1, 74.4]
-)
-
-# a) Best guess for life expectancy at birth for someone born in 1996
-# we use PCHIP (Monotonic) because life expectancy behaves monotonically and has a slight concavity that Splines might overshoot.
+# interpolate
+# FritschButlandMonotonicInterpolation() applies the Pchip interpolation according to Fritsch & Butland (1984)
 pchip_interp_life_exp = interpolate(
-    Int64.(life_expectancy["year"]), 
-    life_expectancy["expectancy"], 
+    years, expectancy,
     FritschButlandMonotonicInterpolation()
 )
 
 guess_1996 = pchip_interp_life_exp(1996)
 println("The best guess for life expectancy in 1996 is $(round(guess_1996, digits=2)) years.")
-
 ```
 
 ## (b)
-Now we plot the series of life expectancy filling the missing years using Pchip interpolation again.
+Now we plot the series of life expectancy filling the missing years using the Pchip interpolation.
 
 ```{julia}
-#| label: q1-plot
-
-# b) Plotting the life expectancy using the interpolation method
 years_plot = 1940:1:2010
 
-plot(life_expectancy["year"], life_expectancy["expectancy"], 
+plot(years, expectancy, 
      seriestype=:scatter, 
      label="Data",
      ylabel="Life Expectancy at birth", 
      legend=:topleft)
 plot!(years_plot, pchip_interp_life_exp.(years_plot), label="Pchip")
-
 ```
 
 
 # Question 2
+In this question, we interpolate the PDF of a Pareto distribution 
+$$
+f(x)
+= \frac{\alpha x^{\alpha}_{m}}{x^{\alpha+1}}
+$$
+
+with parameters $x_m=1$ and $\alpha=10$.
+
+## (a) and (b)
+**Create a vector of trying points, x. Draw a sample with 2500 numbers using a uniform distribution over the interval [1; 5]. You should keep this fixed for the entire exercise.**
+
+```{julia}
+# Pareto Function
+function pareto_pdf(x, α, x_m)
+    return (α * x_m^α) / (x^(α + 1))
+end
+
+α_val = 10.0
+x_m_val = 1.0
+
+# a) Create a fixed sample of 2500 trying points using a uniform distribution over [1, 5]
+Random.seed!(1881)
+x = sort!(rand(Uniform(1.0, 5.0), 2500))
+
+# Pre-compute the true values for the trying points
+f_true_q2 = pareto_pdf.(x, α_val, x_m_val)
+
+# Defining methods to loop through
+methods = [
+    DataInterpolations.LinearInterpolation,
+    DataInterpolations.CubicSpline,
+    DataInterpolations.PCHIPInterpolation
+]
+method_names = ["Linear", "Cubic Spline", "PCHIP"]
+```
+
+**Now we will approximate the function f for all trying points x, using only the vectors t and y and some interpolation methods. That is, you should pretend you do not know the true function f**
+
+## (c) e (d)
+```{julia}
+for n in [10, 15, 20, 30, 50]
+    # Creating the evenly spaced grid
+    grid_t = collect(range(1.0, 5.0, length=n))
+    y = pareto_pdf.(grid_t, α_val, x_m_val)
+    
+    df_mse = DataFrame(Method = method_names, MSE = zeros(3), Average_Time_μs)= zeros(Int, 3))
+    
+    for (idx, method) in enumerate(methods)
+        times = zeros(1000)
+        mse = 0.0
+        
+        for rep in 1:1000
+            t = @elapsed begin
+                interp = method(y, grid_t)
+                f_hat = interp.(x)
+                error = f_true_q2 .- f_hat
+                mse = sum(error.^2) / length(error)
+            end
+            times[rep] = t
+        end
+        
+        df_mse[idx, :MSE] = mse
+        df_mse[idx, :Average_Time_μs] = trunc(Int, 1e6 * mean(times)) # time in μs
+    end
+    
+    println("\n--- Pareto Linear Grid with n = $n ---")
+    pretty_table(df_mse)
+end
+```
+
+## (e)
+Here we repeat items (b), (c) and (d) using a log-spaced grid. The idea is that a log-spaced grid ...
+```{julia}
+for n in [10, 15, 20, 30, 50]
+    # Creating the log-spaced grid
+    grid_t_log = exp.(range(log(1.0), log(5.0), length=n))
+    y_log = pareto_pdf.(grid_t_log, α_val, x_m_val)
+    
+    df_mse = DataFrame(Method = method_names, MSE = zeros(3), Average_Time_μs = zeros(Int, 3))
+    
+    for (idx, method) in enumerate(methods)
+        times = zeros(1000)
+        mse = 0.0
+        
+        for rep in 1:1000
+            t = @elapsed begin
+                interp = method(y_log, grid_t_log)
+                f_hat = interp.(x)
+                error = f_true_q2 .- f_hat
+                mse = sum(error.^2) / length(error)
+            end
+            times[rep] = t
+        end
+        
+        df_mse[idx, :MSE] = mse
+        df_mse[idx, :Average_Time_μs] = trunc(Int, 1e6 * mean(times)) # time in μs
+    end
+    
+    println("\n--- Pareto Log-spaced Grid with n = $n ---")
+    pretty_table(df_mse)
+end
+
+```
+
+## (f)
+**What conclusions can you draw from this exercise?**
+
+The Pareto PDF has an extremely steep decline starting right at $x = x_m = 1$, and possesses a long, flat tail afterwards. An evenly spaced grid places too few nodes in the high-curvature region at the beginning, causing significant interpolation errors. Switching to a log-spaced grid naturally clusters more points closer to $x=1$, which drastically reduces the MSE across all methods. Pchip often performs exceptionally well as it respects the strict monotonicity and prevents the splines from overshooting the fat tail.
+
+
+# Question 3
+Now the function is
+$$
+g(x) = [1 + \exp(-\eta \log (\frac{x}{\xi}))]^{-1}
+$$
+
+where $\eta=5$, $\xi=500$ and $x \in [200,1000]$.
+
+```{julia}
+function logistic_func(x, η, ξ)
+    return 1.0 / (1.0 + exp(-η * log(x / ξ)))
+end
+
+η_val = 5.0
+ξ_val = 500.0
+
+trying_points_q3 = sort!(rand(Uniform(200.0, 1000.0), 2500))
+f_true_q3 = logistic_func.(trying_points_q3, η_val, ξ_val)
+
+# Linear Grids
+for n in [10, 15, 20, 30, 50]
+    grid_t = collect(range(200.0, 1000.0, length=n))
+    y = logistic_func.(grid_t, η_val, ξ_val)
+    
+    df_mse = DataFrame(Method = method_names, MSE = zeros(3), Average_Time_μs = zeros(Int, 3))
+    
+    for (idx, method) in enumerate(methods)
+        times = zeros(1000)
+        mse = 0.0
+        for rep in 1:1000
+            t = @elapsed begin
+                interp = method(y, grid_t)
+                f_hat = interp.(trying_points_q3)
+                error = f_true_q3 .- f_hat
+                mse = sum(error.^2) / length(error)
+            end
+            times[rep] = t
+        end
+        df_mse[idx, :MSE] = mse
+        df_mse[idx, :Average_Time_μs] = trunc(Int, 1e6 * mean(times))
+    end
+    
+    println("\n--- Logistic Linear Grid with n = $n ---")
+    pretty_table(df_mse)
+end
+
+# Log Grids
+for n in [10, 15, 20, 30, 50]
+    grid_t_log = exp.(range(log(200.0), log(1000.0), length=n))
+    y_log = logistic_func.(grid_t_log, η_val, ξ_val)
+    
+    df_mse = DataFrame(Method = method_names, MSE = zeros(3), Average_Time_μs = zeros(Int, 3))
+    
+    for (idx, method) in enumerate(methods)
+        times = zeros(1000)
+        mse = 0.0
+        for rep in 1:1000
+            t = @elapsed begin
+                interp = method(y_log, grid_t_log)
+                f_hat = interp.(trying_points_q3)
+                error = f_true_q3 .- f_hat
+                mse = sum(error.^2) / length(error)
+            end
+            times[rep] = t
+        end
+        df_mse[idx, :MSE] = mse
+        df_mse[idx, :Average_Time_μs] = trunc(Int, 1e6 * mean(times))
+    end
+    
+    println("\n--- Logistic Log-spaced Grid with n = $n ---")
+    pretty_table(df_mse)
+end
+
+```
+
 ## (a)
+**What conclusions are different in this case?**
+Unlike the Pareto distribution where the log grid was universally better, the log-spaced grid here does not perform better than the linear grid. The linear grids often generate lower MSEs.
+
+## (b)
+**Given the shape of the function, what would be the best grid?**
+This occurs because $g(x)$ is an S-shaped (logistic) function. Its highest curvature and transition happen near its inflection point in the middle of the interval ($x \approx \xi = 500$). A log grid clusters points near the start (200), where the function is relatively flat, leaving the critical middle section sparse. The best grid would be densely clustered around the middle of the interval ($x \approx 500$) rather than at the tails.
+
+
+# Question 4
+Now we want to find the root of:
+$$
+f(x) = x^3 + 2x + 5
+$$
+
+## (a)
+The first step is to bracket the root. To do so, we check the function evaluated at some values of $x$ and look for where it changes signs.
+
+::: {.callout-tip}
+If we expand and try an analytical answer we have
+$$
+x^3 + 2x + 5 = 0 \Leftrightarrow x (x^2 + 2) = -5
+$$
+
+Since $(x^2 + 2) \gt 0$, the root $x$ must be strictly negative.
+:::
+
+```{julia}
+# define function -  in this case it is just a polynomial
+f_root(x) = x^3 + 2x + 5
+
+# guess some values
+println("f(-3) = ", f_root(-3.0)) # -27 - 6 + 5 = -28
+println("f(-2) = ", f_root(-2.0)) # -8 - 4 + 5 = -7
+println("f(-1) = ", f_root(-1.0)) # -1 - 2 + 5 = 2
+
+println("\nThe root is bracketed in the interval [-2.0, -1.0] because f(-2) and f(-1) have opposite signs.")
+
+```
+
+## (b)
+**Find the root using the bisection method. How many iterations are required to reach the tolerance of 10^8?**
+```{julia}
+function bisection_method(f, a, b; tol=1e-8, max_iter=100)
+    # Check if initial interval is valid
+    if f(a) * f(b) > 0
+        error("Function values at the interval endpoints must have opposite signs.")
+    end
+    
+    iter = 0
+    c = (a + b) / 2.0
+    
+    while abs(b - a) > tol && iter < max_iter
+        c = (a + b) / 2.0
+        if abs(f(c)) < tol
+            return c, iter
+        end
+        if f(a) * f(c) < 0
+            b = c
+        else
+            a = c
+        end
+        iter += 1
+    end
+    
+    if iter == max_iter
+        println("Warning: Reached max_iter without fully converging to tolerance.")
+    end
+    return c, iter
+end
+
+root_val, iterations = bisection_method(f_root, -2.0, -1.0)
+println("\nRoot found using bisection method: ", root_val)
+println("Number of iterations required: ", iterations)
+
+```
+
+## (c)
+**Now use the secant method. How does it compare?**
+
+## (d)
+**Since this is a polynomial, we can easily compute its derivative and use the Newton-Raphson method. How does it compare to the other methods?**
+
 
