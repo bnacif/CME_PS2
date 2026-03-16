@@ -33,10 +33,10 @@ using Interpolations, DataInterpolations, Distributions, Random,
 # Question 1
 ## (a)
 We want to guess the life expectancy at birth for someone born in 1996.
-To do so, observe that life expectancy increases monotonically with time according to the observed data, so we should not consider a cubic spline. Since the problem is one dimensional, we choose the Pchip
+To do so, observe that life expectancy increases monotonically with time according to the observed data, so we should not consider a cubic spline. Since the problem is one dimensional, we choose the Pchip.
 ```{julia}
 # define vectors 
-year = [1940, 1950, 1960, 1970, 1980, 1991, 2000, 2010],
+years = [1940, 1950, 1960, 1970, 1980, 1991, 2000, 2010]
 expectancy = [45.5, 48.0, 52.5, 57.6, 62.5, 66.9, 71.1, 74.4]
 
 # interpolate
@@ -75,43 +75,44 @@ $$
 with parameters $x_m=1$ and $\alpha=10$.
 
 ## (a) and (b)
-**Create a vector of trying points, x. Draw a sample with 2500 numbers using a uniform distribution over the interval [1; 5]. You should keep this fixed for the entire exercise.**
-
+To start, we define the function with the correct parameters and draw the sample from $U (1, 5)$. We also define a grid of 10 points from 1 to 5 to create the vector $y$ of the function values at these points.
 ```{julia}
 # Pareto Function
-function pareto_pdf(x, α, x_m)
-    return (α * x_m^α) / (x^(α + 1))
+function pareto_pdf(x, alpha, x_m)
+    return (alpha * x_m^alpha) / (x^(alpha + 1))
 end
 
-α_val = 10.0
+alpha_val = 10.0
 x_m_val = 1.0
 
-# a) Create a fixed sample of 2500 trying points using a uniform distribution over [1, 5]
+# create sample of 2500 trying points 
 Random.seed!(1881)
 x = sort!(rand(Uniform(1.0, 5.0), 2500))
 
-# Pre-compute the true values for the trying points
-f_true_q2 = pareto_pdf.(x, α_val, x_m_val)
+# compute the true values for the trying points
+println("Check the sample below.")
+f_true_q2 = pareto_pdf.(x, alpha_val, x_m_val)
+```
 
-# Defining methods to loop through
+Now we approximate the function with the trying points ($x$). We define three interpolation methods to do that: linear interpolation, cubic spline and Pchip.
+
+## (c) e (d)
+```{julia}
+# methods to loop
 methods = [
     DataInterpolations.LinearInterpolation,
     DataInterpolations.CubicSpline,
     DataInterpolations.PCHIPInterpolation
 ]
 method_names = ["Linear", "Cubic Spline", "PCHIP"]
-```
 
-**Now we will approximate the function f for all trying points x, using only the vectors t and y and some interpolation methods. That is, you should pretend you do not know the true function f**
-
-## (c) e (d)
-```{julia}
+# approximation
 for n in [10, 15, 20, 30, 50]
-    # Creating the evenly spaced grid
+    # create the grid
     grid_t = collect(range(1.0, 5.0, length=n))
-    y = pareto_pdf.(grid_t, α_val, x_m_val)
-    
-    df_mse = DataFrame(Method = method_names, MSE = zeros(3), Average_Time_μs)= zeros(Int, 3))
+    y = pareto_pdf.(grid_t, alpha_val, x_m_val)
+    # start the empty df
+    df_mse = DataFrame(Method = method_names, MSE = zeros(3), Average_Time_μs = zeros(Int, 3))
     
     for (idx, method) in enumerate(methods)
         times = zeros(1000)
@@ -137,13 +138,14 @@ end
 ```
 
 ## (e)
-Here we repeat items (b), (c) and (d) using a log-spaced grid. The idea is that a log-spaced grid ...
+Here we repeat items (b), (c) and (d) using a log-spaced grid. The idea is that a log-spaced grid means more density at the beginning of the interval ($x = 1$), where the distribution has the highest curvature. This way the interpolation algorithms should capture the true shape more accurately.
+
 ```{julia}
 for n in [10, 15, 20, 30, 50]
-    # Creating the log-spaced grid
+    # create the grid
     grid_t_log = exp.(range(log(1.0), log(5.0), length=n))
-    y_log = pareto_pdf.(grid_t_log, α_val, x_m_val)
-    
+    y_log = pareto_pdf.(grid_t_log, alpha_val, x_m_val)
+    # start the empty df
     df_mse = DataFrame(Method = method_names, MSE = zeros(3), Average_Time_μs = zeros(Int, 3))
     
     for (idx, method) in enumerate(methods)
@@ -167,13 +169,11 @@ for n in [10, 15, 20, 30, 50]
     println("\n--- Pareto Log-spaced Grid with n = $n ---")
     pretty_table(df_mse)
 end
-
 ```
 
 ## (f)
-**What conclusions can you draw from this exercise?**
 
-The Pareto PDF has an extremely steep decline starting right at $x = x_m = 1$, and possesses a long, flat tail afterwards. An evenly spaced grid places too few nodes in the high-curvature region at the beginning, causing significant interpolation errors. Switching to a log-spaced grid naturally clusters more points closer to $x=1$, which drastically reduces the MSE across all methods. Pchip often performs exceptionally well as it respects the strict monotonicity and prevents the splines from overshooting the fat tail.
+We know the pdf of a Pareto distribution is steep at $x = x_m = 1$, and has a flat tail afterwards. An evenly spaced grid places too few nodes in this high-curvature region, causing more interpolation errors. Switching to a log-spaced grid makes more points closer to $x=1$. This way, as we expected, MSE indeed reduces across methods. Comparing between methods, Pchip often performs well as it respects the monotonicity and prevents the splines from overshooting the fat tail. However, this results in higher average time compared to the other algorithms.
 
 
 # Question 3
@@ -184,21 +184,22 @@ $$
 
 where $\eta=5$, $\xi=500$ and $x \in [200,1000]$.
 
+We repeat the loops from Question 2, only changing the function.
 ```{julia}
-function logistic_func(x, η, ξ)
-    return 1.0 / (1.0 + exp(-η * log(x / ξ)))
+function logistic_func(x, eta, xi)
+    return 1.0 / (1.0 + exp(-eta * log(x / xi)))
 end
 
-η_val = 5.0
-ξ_val = 500.0
+eta_val = 5.0
+xi_val = 500.0
 
 trying_points_q3 = sort!(rand(Uniform(200.0, 1000.0), 2500))
-f_true_q3 = logistic_func.(trying_points_q3, η_val, ξ_val)
+f_true_q3 = logistic_func.(trying_points_q3, eta_val, xi_val)
 
-# Linear Grids
+# linear grid
 for n in [10, 15, 20, 30, 50]
     grid_t = collect(range(200.0, 1000.0, length=n))
-    y = logistic_func.(grid_t, η_val, ξ_val)
+    y = logistic_func.(grid_t, eta_val, xi_val)
     
     df_mse = DataFrame(Method = method_names, MSE = zeros(3), Average_Time_μs = zeros(Int, 3))
     
@@ -222,10 +223,10 @@ for n in [10, 15, 20, 30, 50]
     pretty_table(df_mse)
 end
 
-# Log Grids
+# log grid
 for n in [10, 15, 20, 30, 50]
     grid_t_log = exp.(range(log(200.0), log(1000.0), length=n))
-    y_log = logistic_func.(grid_t_log, η_val, ξ_val)
+    y_log = logistic_func.(grid_t_log, eta_val, xi_val)
     
     df_mse = DataFrame(Method = method_names, MSE = zeros(3), Average_Time_μs = zeros(Int, 3))
     
@@ -248,58 +249,56 @@ for n in [10, 15, 20, 30, 50]
     println("\n--- Logistic Log-spaced Grid with n = $n ---")
     pretty_table(df_mse)
 end
-
 ```
 
 ## (a)
-**What conclusions are different in this case?**
-Unlike the Pareto distribution where the log grid was universally better, the log-spaced grid here does not perform better than the linear grid. The linear grids often generate lower MSEs.
+Unlike the Pareto distribution where the log grid was universally better, the log-spaced grid here does not perform better than the linear grid. The Pareto function's curvature is concentrated at the beginning of the interval, making a log grid good. In this case, having more nodes at beginning of the interval does not perform well probably because the function is flat around $x=200$, leaving the critical regions of the function with undersampled.
 
 ## (b)
-**Given the shape of the function, what would be the best grid?**
-This occurs because $g(x)$ is an S-shaped (logistic) function. Its highest curvature and transition happen near its inflection point in the middle of the interval ($x \approx \xi = 500$). A log grid clusters points near the start (200), where the function is relatively flat, leaving the critical middle section sparse. The best grid would be densely clustered around the middle of the interval ($x \approx 500$) rather than at the tails.
+The function is S-shaped. Its highest curvature happen near the inflection point in the middle of the interval. Therefore, the best grid would be dense around the middle of the interval ($x \approx 500$) rather than at the tails.
 
 
 # Question 4
-Now we want to find the root of:
+In this last question we want to find the root of:
 $$
 f(x) = x^3 + 2x + 5
 $$
 
 ## (a)
+
 The first step is to bracket the root. To do so, we check the function evaluated at some values of $x$ and look for where it changes signs.
 
-::: {.callout-tip}
+::: {.callout}
 If we expand and try an analytical answer we have
 $$
 x^3 + 2x + 5 = 0 \Leftrightarrow x (x^2 + 2) = -5
 $$
 
-Since $(x^2 + 2) \gt 0$, the root $x$ must be strictly negative.
+Since $(x^2 + 2) > 0$, the root $x$ must be strictly negative.
 :::
 
 ```{julia}
 # define function -  in this case it is just a polynomial
 f_root(x) = x^3 + 2x + 5
 
-# guess some values
+# guess values
 println("f(-3) = ", f_root(-3.0)) # -27 - 6 + 5 = -28
 println("f(-2) = ", f_root(-2.0)) # -8 - 4 + 5 = -7
 println("f(-1) = ", f_root(-1.0)) # -1 - 2 + 5 = 2
 
-println("\nThe root is bracketed in the interval [-2.0, -1.0] because f(-2) and f(-1) have opposite signs.")
-
+println("\nThe root is bracketed in the interval [-2.0, -1.0].")
 ```
 
 ## (b)
-**Find the root using the bisection method. How many iterations are required to reach the tolerance of 10^8?**
-```{julia}
+
+Now we implement a bisection using this interval. The tolerance for a root is $10^8$ and we choose a maximum of iterations of 500.
+```{julia} 
 function bisection_method(f, a, b; tol=1e-8, max_iter=100)
-    # Check if initial interval is valid
+    # check if initial interval is valid
     if f(a) * f(b) > 0
         error("Function values at the interval endpoints must have opposite signs.")
     end
-    
+    # initial values
     iter = 0
     c = (a + b) / 2.0
     
@@ -317,7 +316,7 @@ function bisection_method(f, a, b; tol=1e-8, max_iter=100)
     end
     
     if iter == max_iter
-        println("Warning: Reached max_iter without fully converging to tolerance.")
+        println("Warning: Reached max_iter without converging.")
     end
     return c, iter
 end
@@ -325,13 +324,104 @@ end
 root_val, iterations = bisection_method(f_root, -2.0, -1.0)
 println("\nRoot found using bisection method: ", root_val)
 println("Number of iterations required: ", iterations)
-
 ```
 
 ## (c)
-**Now use the secant method. How does it compare?**
+To use the secant method, we also need two initial values $x_0$ and $x_1$, but not necessarily a bracket. Here we use the same as before for comparison of the algorithms.
+
+```{julia}
+function secant_method(f, x0, x1; tol=1e-8, max_iter=500)
+    iter = 0
+    # initial values
+    while abs(x1 - x0) > tol && iter < max_iter
+        f_x0 = f(x0)
+        f_x1 = f(x1)
+        
+        # avoid division by close to zero if the derivative is flat
+        if abs(f_x1 - f_x0) < 1e-14
+            println("Warning: Function is too flat, denominator approaching zero.")
+            break
+        end
+        
+        # secant formula
+        x_next = x1 - f_x1 * (x1 - x0) / (f_x1 - f_x0)
+        
+        # update
+        x0 = x1
+        x1 = x_next
+        iter += 1
+        
+        # check tolerance
+        if abs(f(x1)) < tol
+            return x1, iter
+        end
+    end
+    # check convergence
+    if iter == max_iter
+        println("Warning: Reached max_iter without converging.")
+    end
+    return x1, iter
+end
+
+root_val_secant, iter_secant = secant_method(f_root, -2.0, -1.0)
+println("\nRoot found using the secant method: ", root_val_secant)
+println("Number of iterations required: ", iter_secant)
+```
+
+Choosing between bisection and secant is a trade-off between reliability and speed. In the bisection, we find the root for sure (if the brecket is correct), but it might be slow. Here it takes four times the number of iterations compared to the secant. In contrast, the secant method uses the slope of secant lines to jump toward the root and doesn't require a bracket. However, there is a risk of no convergence if the function is flat at some point and the denominator is close to zero.
 
 ## (d)
-**Since this is a polynomial, we can easily compute its derivative and use the Newton-Raphson method. How does it compare to the other methods?**
+For the Newton-Raphson method, we need the function and its derivative: 
+$$
+ f(x) = x^3 + 2x + 5 \quad \Rightarrow \quad f'(x) = 3x^2 + 2.
+$$
 
+The update rule is:
+$x_{n+1} = x_n - \frac{f(x_n)}{f'(x_n)}$
 
+```{julia}
+f_prime(x) = 3x^2 + 2.0
+
+function newton_raphson(f, df, x0; tol=1e-8, max_iter=500)
+    # initial values
+    iter = 0
+    x = x0
+    
+    while abs(f(x)) > tol && iter < max_iter
+        f_val = f(x)
+        df_val = df(x)
+        
+        # avoid division by close to zero if the derivative is flat
+        if abs(df_val) < 1e-14
+            println("Warning: Derivative is close to zero, stopping to prevent division by zero.")
+            break
+        end
+        
+        # Newton-Raphson formula
+        x_next = x - (f_val / df_val)
+        
+        # check tolerance
+        if abs(x_next - x) < tol
+            x = x_next
+            iter += 1
+            break
+        end
+        
+        x = x_next
+        iter += 1
+    end
+    # check convergence
+    if iter == max_iter
+        println("Warning: Reached max_iter without converging.")
+    end
+    
+    return x, iter
+end
+
+# We only need one initial guess for Newton-Raphson
+root_val_nr, iter_nr = newton_raphson(f_root, f_prime, -2.0)
+println("\nRoot found using the Newton-Raphson method: ", root_val_nr)
+println("Number of iterations required: ", iter_nr)
+```
+
+When comparing the three methods, there is a clear trade-off between convergence speed and the certainty of finding the root. The Newton-Raphson method is the fastest if the initial guess is not too close to the root. It also requires an analytical derivative that might not be easy to compute. The secant method converges fast without needing a derivative, but it can also diverge. In contrast, the bisection method is the slowest but the most reliable with a valid initial bracket.
